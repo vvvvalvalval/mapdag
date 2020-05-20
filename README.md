@@ -6,5 +6,5 @@ More concretely, the computations are modeled as a Directed Acyclic Graphs (DAG)
 
 The ideas behind this library are quite similar to [`plumatic/plumbing`'s Graph](https://github.com/plumatic/plumbing#graph-the-functional-swiss-army-knife), but this library is more focused, and makes some different design choices.
 
-**TODO** Leininen for artifact
 **TODO** usage
+**TODO** Rationale
