@@ -259,10 +259,10 @@
     ;; This generated function gets injected some runtime data (notably the :mapdag.step/compute-fn functions)
     ;; and returns a `compiled-compute` function which does the actual computation of derived keys.
     [graph k->i i->k]
-    (let [MISSING (Object.)                       ;; Flag indicating a missing (not yet found or computed) step
-          EXPLORING (Object.)                     ;; Flag used for detecting circular dependencies
+    (let [MISSING (Object.)                       ;; Flag object indicating a missing (not yet found or computed) step
+          EXPLORING (Object.)                     ;; Flag object used for detecting circular dependencies
 
-          ;; Retrieving the keys. These values are usually keywords, but other behaviour is allowed.
+          ;; Retrieving the keys. These values are usually keywords (in our example: :N, :mean, :xs, etc.), but other behaviour is allowed.
           k-0--squares (nth i->k 0)
           k-1--mean (nth i->k 1)
           k-2--stddev (nth i->k 2)
@@ -281,11 +281,12 @@
           compute-3--variance (get-in graph [k-3--variance :mapdag.step/compute-fn])
           compute-2--stddev (get-in graph [k-2--stddev :mapdag.step/compute-fn])
 
+          ;; A 'prototype' array for the cache array.
           model-array (object-array (repeat 8 MISSING))]
       (letfn
         [(add-input [computed-arr k v]
            ;; Reads an inputs-map entry, adding its value to the `computed-arr` cache array if required.
-           (case k
+           (case k                                          ;; static dispatch, hopefully makes things faster.
              :squares
              (aset computed-arr 0 v)
              :mean
@@ -302,12 +303,13 @@
              (aset computed-arr 6 v)
              :sum
              (aset computed-arr 7 v)
-             (when-some
-               [i (get k->i k)]
+             ;; handling non case-able keys (very untypical) by falling back to a Map lookup.
+             ;; Note to self: remove this the typical case where a match is impossible, to avoid paying for non-processed keys in inputs-map.
+             (when-some [i (get k->i k)]
                (aset computed-arr i v)))
            computed-arr)
 
-         ;; Reads an input that is not a compute step from the cache array.
+         ;; Reads an input value that is not a compute step, which will have been added to the cache array by `add-input`.
          (ensure-4--xs [computed-arr]
            (let [v (aget computed-arr 4)]
              (if (identical? v MISSING)
@@ -320,7 +322,7 @@
          ;; and using the `computed-arr` array as a cache.
          ;; In particular, the call graph between these functions is static,
          ;; so hopefully this can help JIT optimization, enabling monomorphic dispatch,
-         ;; inlining etc.
+         ;; inlining etc. TODO does this optimization really happen as hoped?
          (ensure-6--N [computed-arr]
            ;; I've commented on this one function, all the other work the same.
            (let [v (aget computed-arr 6)]
@@ -560,7 +562,7 @@
             (let [computed-arr (object-array 8)             ;; the cache array
                   ;; Initializing the cache with MISSING
                   _ (System/arraycopy model-array 0 computed-arr 0 8)
-                  ;; Importing the inputs into the cache
+                  ;; Importing the inputs into the cache array
                   computed-arr (reduce-kv add-input computed-arr inputs-map)]
               ;; computing the output map
               (persistent!
