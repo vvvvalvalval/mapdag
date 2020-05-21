@@ -1,5 +1,5 @@
-(defproject vvvvalvalval/mapdag "0.1.0"
-  :description "A library for expressing computations as DAGs of named steps. Maps-in, maps-out."
+(defproject vvvvalvalval/mapdag "0.2.0"
+  :description "A library for expressing computations as DAGs of named steps. Maps-in, maps-out. AOT compilation available on the JVM for high-performance scenarios."
   :url "https://github.com/vvvvalvalval/mapdag"
   :license {:name "MIT"
             :url "https://opensource.org/licenses/MIT"}

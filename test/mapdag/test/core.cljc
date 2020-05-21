@@ -1,6 +1,7 @@
 (ns mapdag.test.core
   (:require [clojure.test :refer :all]
             [mapdag.step :as mdg]
+            [mapdag.test.analysis]
             [mapdag.test.error]))
 
 (def stats-dag
@@ -112,4 +113,5 @@
                 (map (fn [k]
                        [k 1.]))
                 input-keys)
-              output-keys)))))))
+              output-keys))))))
+  :done)

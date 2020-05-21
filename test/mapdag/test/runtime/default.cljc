@@ -5,11 +5,3 @@
 
 (deftest compute--examples
   (mapdag.test.core/test-implementation--examples mapdag.runtime.default/compute))
-
-
-(comment
-
-  (run-all-tests #"mapdag\.test\..*")
-
-  *e)
-

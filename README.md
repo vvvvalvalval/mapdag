@@ -8,6 +8,8 @@ More concretely, the computations are modeled as a Directed Acyclic Graphs (DAG)
 
 The ideas behind this library are quite similar to [`plumatic/plumbing`'s Graph](https://github.com/plumatic/plumbing#graph-the-functional-swiss-army-knife), but this library is more focused, and makes some different design choices.
 
+**Project status:** alpha quality.
+
 
 ## Installation
 
@@ -16,12 +18,14 @@ This library is available for download from [Clojars](https://clojars.org/vvvval
 To add it as a dependency to your project, add this to your `deps.edn`:
 
 ```
-  vvvvalvalval/mapdag {:mvn/version "0.1.0"}
+  vvvvalvalval/mapdag {:mvn/version "0.2.0"}
 ```
 
 
 
 ## Usage
+
+#### Defining a computation graph
 
 Suppose your project frequently involves computing some statistics from a list of numbers.
 
@@ -68,8 +72,10 @@ You can define these computations using a **`mapdag` Graph**:
 
 Note that this is just a plain Clojure data structure, which describes how various **Steps** are computed in terms of others.
 
-You can now run this graph by providing some inputs and requiring some outputs:
 
+#### Calling the graph
+
+You can now run this graph by providing some inputs and requiring some outputs:
 
 
 ```clojure
@@ -84,6 +90,9 @@ You can now run this graph by providing some inputs and requiring some outputs:
 ```
 
 The Steps you requested are returned in a map. Only the necessary steps will have been computed to achieve this result (in this example, these are `#{::N, ::sum, ::mean}`).
+
+
+#### Concision helpers
 
 Finally, you may also want to express the graph more concisely. This library provides some helpers for that:
 
@@ -114,6 +123,27 @@ Finally, you may also want to express the graph more concisely. This library pro
 
 See also the [reference documentation](https://cljdoc.org/d/vvvvalvalval/mapdag) on cljdoc, and [`mapdag.test.core`](./test/mapdag/test/core.cljc) for more examples.
 
+
+#### Ahead-Of-Time compilation
+
+`mapdag.runtime.default` offers the most dynamic execution strategy, but it has quite some overhead, which may be a problem in high-performance scenarios.
+
+If the graph structure is known in advance, Ahead-Of-Time compilation can make the downstream computations much more efficient.
+
+[`mapdag.runtime.jvm-eval`](./src/mapdag/runtime/jvm_eval.clj) enables you to compile graphs to highly-efficient functions on the JVM, using `clojure.core/eval` and low-level interop to generate low-overhead, JIT-friendly JVM bytecode:
+
+
+```clojure
+(require '[mapdag.runtime.jvm-eval])
+
+(def compute-stats
+  (mapdag.runtime.jvm-eval/compile-graph {} stats-dag))
+
+(compute-stats
+  {::raw-numbers [-1. 0. 2. 3.]}
+  [::N ::mean])
+;=> #:myapp.stats{:N 4, :mean 1.0}
+```
 
 
 ## Rationale

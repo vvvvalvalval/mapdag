@@ -2,12 +2,17 @@
  :paths ["src"]
 
  :aliases
- {:test
-  {:extra-paths ["test"]
+ {:dev
+  {:extra-paths ["dev"]
    :extra-deps
-   {org.clojure/test.check {:mvn/version "1.0.0"}
+   {vvvvalvalval/scope-capture {:mvn/version "0.3.2"}
+
     com.clojure-goes-fast/clj-async-profiler {:mvn/version "0.3.1"}
     criterium {:mvn/version "0.4.5"}}}
+  :test
+  {:extra-paths ["test"]
+   :extra-deps
+   {org.clojure/test.check {:mvn/version "1.0.0"}}}
   :doc-examples
   {:extra-paths ["docs/examples"]}}}
 

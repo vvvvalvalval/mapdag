@@ -35,7 +35,6 @@
     ks err-data))
 
 
-
 (defn test-graph-validation 
   [validate-fn]
   (testing "Dependency validation"

@@ -67,3 +67,15 @@
                   (-
                     (/ s2 N)
                     (* m m))))})
+
+
+
+(require '[mapdag.runtime.jvm-eval])
+
+(def compute-stats
+  (mapdag.runtime.jvm-eval/compile-graph {} stats-dag))
+
+(compute-stats
+  {::raw-numbers [-1. 0. 2. 3.]}
+  [::N ::mean])
+;=> #:myapp.stats{:N 4, :mean 1.0}
