@@ -221,9 +221,362 @@
             factory
             (binding [] #_ [*warn-on-reflection* true]
               (-> factory-code
-                #_(doto clojure.pprint/pprint)
+                ;; FIXME #_
+                (doto clojure.pprint/pprint)
                 eval))]
         (factory graph k->i i->k)))))
+
+(comment ;; example of generated Clojure code
+
+  (require '[mapdag.step :as mdg])
+
+  (def stats-dag
+    {:N (mdg/step [:xs] count)
+     :sum (mdg/step [:xs]
+            (fn [xs] (apply + 0. xs)))
+     :mean (mdg/step [:sum :N]
+             (fn [sum N]
+               (/ sum N)))
+     :squares (mdg/step [:xs]
+                (fn [xs]
+                  (mapv #(* % %) xs)))
+     :sum-squares (mdg/step [:squares]
+                    (fn [s2] (apply + 0. s2)))
+     :variance (mdg/step [:mean :sum-squares :N]
+                 (fn [mean sum-squares N]
+                   (-
+                     (/ sum-squares N)
+                     (* mean mean))))
+     :stddev (mdg/step [:variance]
+               (fn [variance] (Math/sqrt variance)))})
+
+  (def compute-stats
+    (compile-default stats-dag))
+
+
+  ;; The generated `factory-code`. I've just pretty-printed it, and done some re-formatting and commenting.
+  (fn factory
+    ;; This generated function gets injected some runtime data (notably the :mapdag.step/compute-fn functions)
+    ;; and returns a `compiled-compute` function which does the actual computation of derived keys.
+    [graph k->i i->k]
+    (let [MISSING (Object.)                       ;; Flag indicating a missing (not yet found or computed) step
+          EXPLORING (Object.)                     ;; Flag used for detecting circular dependencies
+
+          ;; Retrieving the keys. These values are usually keywords, but other behaviour is allowed.
+          k-0--squares (nth i->k 0)
+          k-1--mean (nth i->k 1)
+          k-2--stddev (nth i->k 2)
+          k-3--variance (nth i->k 3)
+          k-4--xs (nth i->k 4)
+          k-5--sum-squares (nth i->k 5)
+          k-6--N (nth i->k 6)
+          k-7--sum (nth i->k 7)
+
+          ;; Retrieving the functions that compute individual steps.
+          compute-6--N (get-in graph [k-6--N :mapdag.step/compute-fn])
+          compute-7--sum (get-in graph [k-7--sum :mapdag.step/compute-fn])
+          compute-1--mean (get-in graph [k-1--mean :mapdag.step/compute-fn])
+          compute-0--squares (get-in graph [k-0--squares :mapdag.step/compute-fn])
+          compute-5--sum-squares (get-in graph [k-5--sum-squares :mapdag.step/compute-fn])
+          compute-3--variance (get-in graph [k-3--variance :mapdag.step/compute-fn])
+          compute-2--stddev (get-in graph [k-2--stddev :mapdag.step/compute-fn])
+
+          model-array (object-array (repeat 8 MISSING))]
+      (letfn
+        [(add-input [computed-arr k v]
+           ;; Reads an inputs-map entry, adding its value to the `computed-arr` cache array if required.
+           (case k
+             :squares
+             (aset computed-arr 0 v)
+             :mean
+             (aset computed-arr 1 v)
+             :stddev
+             (aset computed-arr 2 v)
+             :variance
+             (aset computed-arr 3 v)
+             :xs
+             (aset computed-arr 4 v)
+             :sum-squares
+             (aset computed-arr 5 v)
+             :N
+             (aset computed-arr 6 v)
+             :sum
+             (aset computed-arr 7 v)
+             (when-some
+               [i (get k->i k)]
+               (aset computed-arr i v)))
+           computed-arr)
+
+         ;; Reads an input that is not a compute step from the cache array.
+         (ensure-4--xs [computed-arr]
+           (let [v (aget computed-arr 4)]
+             (if (identical? v MISSING)
+               (throw
+                 (mapdag.runtime.jvm-eval/missing-step-or-input-ex k-4--xs))
+               v)))
+
+         ;; The following functions, one per graph Step, all compute the value 
+         ;; for their respective Step, calling each other as per their dependencies,
+         ;; and using the `computed-arr` array as a cache.
+         ;; In particular, the call graph between these functions is static,
+         ;; so hopefully this can help JIT optimization, enabling monomorphic dispatch,
+         ;; inlining etc.
+         (ensure-6--N [computed-arr]
+           ;; I've commented on this one function, all the other work the same.
+           (let [v (aget computed-arr 6)]
+             (if (identical? v MISSING)
+               ;; cache miss
+               (do
+                 (aset computed-arr 6 EXPLORING)            ;; anticipating deps cycles
+                 (let [;; computing each :mapdag.step/deps (only one in this case):
+                       l-4--xs (ensure-4--xs computed-arr)
+                       ;; computing the Step value
+                       v1
+                       (try
+                         (compute-6--N l-4--xs)             ;; calling the :mapdag.step/compute-fn
+                         (catch Throwable err               ;; Error catching. TODO Does this hinder JIT optimization?
+                           (throw
+                             (mapdag.runtime.jvm-eval/compute-fn-threw-ex
+                               graph
+                               k-6--N
+                               [l-4--xs]
+                               err))))]
+                   (aset computed-arr 6 v1)                 ;; cache put
+                   v1))
+               (if (identical? v EXPLORING)
+                 ;; dependency cycle detected
+                 (throw (mapdag.runtime.jvm-eval/dep-cycle-ex k-6--N))
+                 ;; cache hit
+                 v))))
+         (ensure-7--sum [computed-arr]
+           (let [v (aget computed-arr 7)]
+             (if
+               (identical? v MISSING)
+               (do
+                 (aset computed-arr 7 EXPLORING)
+                 (let
+                   [l-4--xs
+                    (ensure-4--xs computed-arr)
+                    v1
+                    (try
+                      (compute-7--sum l-4--xs)
+                      (catch
+                        Throwable
+                        err
+                        (throw
+                          (mapdag.runtime.jvm-eval/compute-fn-threw-ex
+                            graph
+                            k-7--sum
+                            [l-4--xs]
+                            err))))]
+                   (aset computed-arr 7 v1)
+                   v1))
+               (if
+                 (identical? v EXPLORING)
+                 (throw (mapdag.runtime.jvm-eval/dep-cycle-ex k-7--sum))
+                 v))))
+         (ensure-1--mean [computed-arr]
+           (let [v (aget computed-arr 1)]
+             (if
+               (identical? v MISSING)
+               (do
+                 (aset computed-arr 1 EXPLORING)
+                 (let
+                   [l-7--sum
+                    (ensure-7--sum computed-arr)
+                    l-6--N
+                    (ensure-6--N computed-arr)
+                    v1
+                    (try
+                      (compute-1--mean l-7--sum l-6--N)
+                      (catch
+                        Throwable
+                        err
+                        (throw
+                          (mapdag.runtime.jvm-eval/compute-fn-threw-ex
+                            graph
+                            k-1--mean
+                            [l-7--sum l-6--N]
+                            err))))]
+                   (aset computed-arr 1 v1)
+                   v1))
+               (if
+                 (identical? v EXPLORING)
+                 (throw (mapdag.runtime.jvm-eval/dep-cycle-ex k-1--mean))
+                 v))))
+         (ensure-0--squares
+           [computed-arr]
+           (let
+             [v (aget computed-arr 0)]
+             (if
+               (identical? v MISSING)
+               (do
+                 (aset computed-arr 0 EXPLORING)
+                 (let
+                   [l-4--xs
+                    (ensure-4--xs computed-arr)
+                    v1
+                    (try
+                      (compute-0--squares l-4--xs)
+                      (catch
+                        Throwable
+                        err
+                        (throw
+                          (mapdag.runtime.jvm-eval/compute-fn-threw-ex
+                            graph
+                            k-0--squares
+                            [l-4--xs]
+                            err))))]
+                   (aset computed-arr 0 v1)
+                   v1))
+               (if
+                 (identical? v EXPLORING)
+                 (throw (mapdag.runtime.jvm-eval/dep-cycle-ex k-0--squares))
+                 v))))
+         (ensure-5--sum-squares
+           [computed-arr]
+           (let
+             [v (aget computed-arr 5)]
+             (if
+               (identical? v MISSING)
+               (do
+                 (aset computed-arr 5 EXPLORING)
+                 (let
+                   [l-0--squares
+                    (ensure-0--squares computed-arr)
+                    v1
+                    (try
+                      (compute-5--sum-squares l-0--squares)
+                      (catch
+                        Throwable
+                        err
+                        (throw
+                          (mapdag.runtime.jvm-eval/compute-fn-threw-ex
+                            graph
+                            k-5--sum-squares
+                            [l-0--squares]
+                            err))))]
+                   (aset computed-arr 5 v1)
+                   v1))
+               (if
+                 (identical? v EXPLORING)
+                 (throw (mapdag.runtime.jvm-eval/dep-cycle-ex k-5--sum-squares))
+                 v))))
+         (ensure-3--variance
+           [computed-arr]
+           (let
+             [v (aget computed-arr 3)]
+             (if
+               (identical? v MISSING)
+               (do
+                 (aset computed-arr 3 EXPLORING)
+                 (let
+                   [l-1--mean
+                    (ensure-1--mean computed-arr)
+                    l-5--sum-squares
+                    (ensure-5--sum-squares computed-arr)
+                    l-6--N
+                    (ensure-6--N computed-arr)
+                    v1
+                    (try
+                      (compute-3--variance l-1--mean l-5--sum-squares l-6--N)
+                      (catch
+                        Throwable
+                        err
+                        (throw
+                          (mapdag.runtime.jvm-eval/compute-fn-threw-ex
+                            graph
+                            k-3--variance
+                            [l-1--mean l-5--sum-squares l-6--N]
+                            err))))]
+                   (aset computed-arr 3 v1)
+                   v1))
+               (if
+                 (identical? v EXPLORING)
+                 (throw (mapdag.runtime.jvm-eval/dep-cycle-ex k-3--variance))
+                 v))))
+         (ensure-2--stddev
+           [computed-arr]
+           (let
+             [v (aget computed-arr 2)]
+             (if
+               (identical? v MISSING)
+               (do
+                 (aset computed-arr 2 EXPLORING)
+                 (let
+                   [l-3--variance
+                    (ensure-3--variance computed-arr)
+                    v1
+                    (try
+                      (compute-2--stddev l-3--variance)
+                      (catch
+                        Throwable
+                        err
+                        (throw
+                          (mapdag.runtime.jvm-eval/compute-fn-threw-ex
+                            graph
+                            k-2--stddev
+                            [l-3--variance]
+                            err))))]
+                   (aset computed-arr 2 v1)
+                   v1))
+               (if
+                 (identical? v EXPLORING)
+                 (throw (mapdag.runtime.jvm-eval/dep-cycle-ex k-2--stddev))
+                 v))))]
+        (let [k->ensure-fn {}
+              ensure-output-key
+              (fn ensure-output-key
+                ;; This function computes the value for a requested output key.
+                [inputs-map computed-arr k]
+                (case k                                     ;; Static dispatch for performance, to prevent megamorphic call sites in particular.
+                  :squares
+                  (ensure-0--squares computed-arr)
+                  :mean
+                  (ensure-1--mean computed-arr)
+                  :stddev
+                  (ensure-2--stddev computed-arr)
+                  :variance
+                  (ensure-3--variance computed-arr)
+                  :xs
+                  (ensure-4--xs computed-arr)
+                  :sum-squares
+                  (ensure-5--sum-squares computed-arr)
+                  :N
+                  (ensure-6--N computed-arr)
+                  :sum
+                  (ensure-7--sum computed-arr)
+                  ;; Handling output keys that are not case-able or not declared in the graph (rare)
+                  (if-some [ens-f (get k->ensure-fn k)]
+                    (ens-f computed-arr)
+                    (if-some [[_k v] (find inputs-map k)]
+                      v
+                      (throw
+                        (mapdag.runtime.jvm-eval/missing-step-or-input-ex k))))))]
+          ;; The function that is the actual output of the graph compilation.
+          ;; Closes over all the helper functions and constants above.
+          (fn compiled-compute
+            [inputs-map output-keys]
+            (let [computed-arr (object-array 8)             ;; the cache array
+                  ;; Initializing the cache with MISSING
+                  _ (System/arraycopy model-array 0 computed-arr 0 8)
+                  ;; Importing the inputs into the cache
+                  computed-arr (reduce-kv add-input computed-arr inputs-map)]
+              ;; computing the output map
+              (persistent!
+                (reduce
+                  (fn [tret ok]
+                    (assoc!
+                      tret
+                      ok
+                      (ensure-output-key inputs-map computed-arr ok)))
+                  (transient {})
+                  output-keys))))))))
+
+
+
+  *e)
+
 
 (comment
 
