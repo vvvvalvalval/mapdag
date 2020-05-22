@@ -68,6 +68,12 @@
         k->i (into {}
                (map-indexed (fn [i k] [k i]))
                i->k)
+        non-caseable-k->i
+        (into {}
+          (keep (fn [[k i]]
+                  (when-not (case-able-key? k)
+                    [k i])))
+          k->i)
         N (count k->i)
         non-dag-keys (into []
                        (remove graph)
@@ -89,7 +95,7 @@
        (ensure-fn-sym [k] (sym-from-k "ensure-" k))
        (local-value-sym [k] (sym-from-k "l-" k))]
       (let [factory-code
-            `(fn ~'factory [~'graph ~'k->i ~'i->k]
+            `(fn ~'factory [~'graph ~'k->i ~'i->k ~'non-caseable-k->i]
                (let [~'MISSING (Object.)
                      ~'EXPLORING (Object.)
 
@@ -123,8 +129,10 @@
                               (fn [[k i]]
                                 [k
                                  `(aset ~computed-arr-sym ~i ~'v)])))
-                        (when-some [~'i (get ~'k->i ~'k)] ;; IMPROVEMENT lookup in smaller map, removing caseable keys. (Val, 21 May 2020)
-                          (aset ~computed-arr-sym ~'i ~'v)))
+                        ~(if (empty? non-caseable-k->i)
+                           nil
+                           `(when-some [~'i (get ~'non-caseable-k->i ~'k)]
+                              (aset ~computed-arr-sym ~'i ~'v))))
                       ~computed-arr-sym)
 
                     ~@(->> non-dag-keys
@@ -158,18 +166,22 @@
                                                      [(local-value-sym dk)
                                                       `(~(ensure-fn-sym dk) ~computed-arr-sym)])))
                                              ~'v1
-                                             (try
-                                               (~(compute-fn-sym k)
-                                                 ~@(->> step
-                                                     :mapdag.step/deps
-                                                     (map local-value-sym)))
-                                               (catch Throwable ~'err
-                                                 (throw
-                                                   (compute-fn-threw-ex ~'graph ~k-sym
-                                                     ~(->> step
-                                                        :mapdag.step/deps
-                                                        (mapv local-value-sym))
-                                                     ~'err))))]
+                                             ~(let [compute-expr
+                                                    `(~(compute-fn-sym k)
+                                                       ~@(->> step
+                                                           :mapdag.step/deps
+                                                           (map local-value-sym)))]
+                                                (if (:mapdag.step/wont-throw step) ;; INTRO set this to true to declare that the compute-fn can be expected to not throw any error, which allows for optimizations in execution.
+                                                  compute-expr
+                                                  `(try
+                                                    ~compute-expr
+                                                    (catch Throwable ~'err
+                                                      (throw
+                                                        (compute-fn-threw-ex ~'graph ~k-sym
+                                                          ~(->> step
+                                                             :mapdag.step/deps
+                                                             (mapv local-value-sym))
+                                                          ~'err))))))]
                                          (aset ~computed-arr-sym ~i ~'v1)
                                          ~'v1))
                                      (if (identical? ~'v ~'EXPLORING)
@@ -178,12 +190,10 @@
                                        ~'v))))))))]
                    (let [~'k->ensure-fn
                          ~(into {}
-                            (comp
-                              (remove (fn [[k _i]] (case-able-key? k)))
-                              (map (fn [[k _i]]
-                                     [(step-name-sym k)
-                                      (ensure-fn-sym k)])))
-                            k->i)
+                            (map (fn [[k _i]]
+                                   [(step-name-sym k)
+                                    (ensure-fn-sym k)]))
+                            non-caseable-k->i)
 
                          ~'ensure-output-key
                          (fn ~'ensure-output-key [~'inputs-map ~computed-arr-sym ~'k]
@@ -195,12 +205,16 @@
                                      (let [ens-f-sym (ensure-fn-sym k)]
                                        [k
                                         `(~ens-f-sym ~computed-arr-sym)]))))
-                             (if-some [~'ens-f (get ~'k->ensure-fn ~'k)]
-                               (~'ens-f ~computed-arr-sym)
-                               (if-some [[~'_k ~'v] (find ~'inputs-map ~'k)]
-                                 ~'v
-                                 (throw
-                                   (missing-step-or-input-ex ~'k))))))]
+                             ~(let [find-in-inputs-expr
+                                    `(if-some [[~'_k ~'v] (find ~'inputs-map ~'k)]
+                                       ~'v
+                                       (throw
+                                         (missing-step-or-input-ex ~'k)))]
+                                (if (empty? non-caseable-k->i)
+                                  find-in-inputs-expr
+                                  `(if-some [~'ens-f (get ~'k->ensure-fn ~'k)]
+                                    (~'ens-f ~computed-arr-sym)
+                                    ~find-in-inputs-expr)))))]
                      (fn ~'compiled-compute
                        [~'inputs-map ~'output-keys]
                        (let [;; IMPROVEMENT use topological sort to initialize an even shorter array (Val, 21 May 2020)
@@ -221,13 +235,16 @@
             factory
             (binding [] #_ [*warn-on-reflection* true]
               (-> factory-code
-                #_(doto clojure.pprint/pprint)
+                #_
+                (doto clojure.pprint/pprint)
                 eval))]
-        (factory graph k->i i->k)))))
+        (factory graph k->i i->k non-caseable-k->i)))))
 
 (comment
 
-  (def graph mapdag.test.core/stats-dag)
+  (def graph
+    (-> mapdag.test.core/stats-dag
+      (assoc-in [:N :mapdag.step/wont-throw] true)))
 
   (def compute (compile-default graph))
 
