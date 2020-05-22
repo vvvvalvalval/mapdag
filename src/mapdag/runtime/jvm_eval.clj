@@ -91,8 +91,8 @@
            (str prefix (k->i k)
              (sym-suffix k))))
        (step-name-sym [k] (sym-from-k "k-" k))
-       (compute-fn-sym [k] (sym-from-k "compute-" k))
-       (ensure-fn-sym [k] (sym-from-k "ensure-" k))
+       (compute-fn-sym [k] (sym-from-k "compute-fn-" k))
+       (resolve-fn-sym [k] (sym-from-k "resolve-" k))
        (local-value-sym [k] (sym-from-k "l-" k))]
       (let [factory-code
             `(fn ~'factory [~'graph ~'k->i ~'i->k ~'non-caseable-k->i]
@@ -140,8 +140,8 @@
                           (fn [k]
                             (let [i (k->i k)
                                   k-sym (step-name-sym k)
-                                  ens-fn-sym (ensure-fn-sym k)]
-                              `(~ens-fn-sym [~computed-arr-sym]
+                                  res-fn-sym (resolve-fn-sym k)]
+                              `(~res-fn-sym [~computed-arr-sym]
                                  (let [~'v (aget ~computed-arr-sym ~i)]
                                    (if (identical? ~'v ~'MISSING)
                                      (throw
@@ -153,8 +153,8 @@
                           (fn [[k step]]
                             (let [i (k->i k)
                                   k-sym (step-name-sym k)
-                                  ens-fn-sym (ensure-fn-sym k)]
-                              `(~ens-fn-sym [~computed-arr-sym]
+                                  res-fn-sym (resolve-fn-sym k)]
+                              `(~res-fn-sym [~computed-arr-sym]
                                  (let [~'v (aget ~computed-arr-sym ~i)]
                                    (if (identical? ~'v ~'MISSING)
                                      (do
@@ -164,7 +164,7 @@
                                                  (mapcat
                                                    (fn [dk]
                                                      [(local-value-sym dk)
-                                                      `(~(ensure-fn-sym dk) ~computed-arr-sym)])))
+                                                      `(~(resolve-fn-sym dk) ~computed-arr-sym)])))
                                              ~'v1
                                              ~(let [compute-expr
                                                     `(~(compute-fn-sym k)
@@ -188,23 +188,23 @@
                                        (throw
                                          (dep-cycle-ex ~k-sym))
                                        ~'v))))))))]
-                   (let [~'k->ensure-fn
+                   (let [~'k->resolve-fn
                          ~(into {}
                             (map (fn [[k _i]]
                                    [(step-name-sym k)
-                                    (ensure-fn-sym k)]))
+                                    (resolve-fn-sym k)]))
                             non-caseable-k->i)
 
-                         ~'ensure-output-key
-                         (fn ~'ensure-output-key [~'inputs-map ~computed-arr-sym ~'k]
+                         ~'resolve-output-key
+                         (fn ~'resolve-output-key [~'inputs-map ~computed-arr-sym ~'k]
                            (case ~'k
                              ~@(->> i->k
                                  (filter case-able-key?)
                                  (mapcat
                                    (fn [k]
-                                     (let [ens-f-sym (ensure-fn-sym k)]
+                                     (let [res-f-sym (resolve-fn-sym k)]
                                        [k
-                                        `(~ens-f-sym ~computed-arr-sym)]))))
+                                        `(~res-f-sym ~computed-arr-sym)]))))
                              ~(let [find-in-inputs-expr
                                     `(if-some [[~'_k ~'v] (find ~'inputs-map ~'k)]
                                        ~'v
@@ -212,8 +212,8 @@
                                          (missing-step-or-input-ex ~'k)))]
                                 (if (empty? non-caseable-k->i)
                                   find-in-inputs-expr
-                                  `(if-some [~'ens-f (get ~'k->ensure-fn ~'k)]
-                                    (~'ens-f ~computed-arr-sym)
+                                  `(if-some [~'res-f (get ~'k->resolve-fn ~'k)]
+                                    (~'res-f ~computed-arr-sym)
                                     ~find-in-inputs-expr)))))]
                      (fn ~'compiled-compute
                        [~'inputs-map ~'output-keys]
@@ -229,7 +229,7 @@
                              (fn [~'tret ~'ok]
                                (assoc! ~'tret
                                  ~'ok
-                                 (~'ensure-output-key ~'inputs-map ~computed-arr-sym ~'ok)))
+                                 (~'resolve-output-key ~'inputs-map ~computed-arr-sym ~'ok)))
                              (transient {})
                              ~'output-keys))))))))
             factory
