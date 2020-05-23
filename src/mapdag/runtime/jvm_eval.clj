@@ -7,7 +7,16 @@
   2. Map-based navigation. This implementation generates code that navigates the graph through primitive array lookups.
   3. Megamorphic JVM call sites (when calling the `:mapdag.step/compute-fn`), impeding JIT optimization. This function eschews this by generating code which defines one function per step, and does static dispatch on the keys (using `clojure.core/case`).
   "
-  (:require [mapdag.analysis]))
+  (:require [mapdag.analysis]
+            [cljfmt.core :as cljfmt]))
+
+(defmacro explained-code
+  "A noop macro for emitting self-commenting code.
+
+  The first `expl-vec` argument (typically a vector) can be used for commenting, and won't be emitted in expansion.
+  The unchanged second argument (or nil if not supplied) will be the result of macro-expansion."
+  ([expl-vec] nil)
+  ([expl-vec expr] expr))
 
 ;; IMPROVEMENT "won't throw" metadata on fn. (Val, 21 May 2020)
 ;; 4. catch clauses?
@@ -79,7 +88,6 @@
                        (remove graph)
                        i->k)
         computed-arr-sym (vary-meta 'computed-arr
-                           ;; FIXME
                            merge {:tag 'objects})]
     (letfn
       [(sym-suffix [k]
@@ -95,150 +103,233 @@
        (resolve-fn-sym [k] (sym-from-k "resolve-" k))
        (local-value-sym [k] (sym-from-k "l-" k))]
       (let [factory-code
-            `(fn ~'factory [~'graph ~'k->i ~'i->k ~'non-caseable-k->i]
-               (let [~'MISSING (Object.)
-                     ~'EXPLORING (Object.)
+            `(explained-code
+               ["This generated function gets injected some runtime data (notably the " :mapdag.step/compute-fn
+                "functions), and returns the actual output of the compilation process: a function accepting"
+                ~'[inputs-map output-keys] "arguments and returning a map."]
+               (fn ~'factory [~'graph ~'k->i ~'i->k ~'non-caseable-k->i]
+                 (let [~'MISSING (explained-code
+                                   ["A flag object indicating a missing value."
+                                    "Note that `nil` cannot be used for this purpose,"
+                                    "as it is a valid value for Steps or inputs."]
+                                   (Object.))
+                       ~'RESOLVING (explained-code
+                                     ["A flag object used for detecting dependency cycles."]
+                                     (Object.))
+                       ~'model-array
+                       (explained-code
+                         ["This array is a ready-to-be-cloned 'prototype' for the cache array"
+                          ~'computed-arr
+                          "which is why it's filled with"
+                          ~'MISSING]
+                         (object-array (repeat ~N ~'MISSING)))
 
-                     ~@(->> i->k
-                         (into []
-                           (comp
-                             (map-indexed
-                               (fn [i k]
-                                 [(step-name-sym k)
-                                  `(nth ~'i->k ~i)]))
-                             cat)))
-
-                     ~@(->> graph
-                         keys
-                         (mapcat
-                           (fn [k]
-                             [(compute-fn-sym k)
-                              `(get-in ~'graph
-                                 [~(step-name-sym k)
-                                  :mapdag.step/compute-fn])])))
-
-                     ~'model-array (object-array (repeat ~N ~'MISSING))]
-                 (letfn
-                   [(~'add-input [~computed-arr-sym ~'k ~'v]
-                      (case ~'k
-                        ~@(->> k->i
-                            (filter
-                              (fn [[k _i]]
-                                (case-able-key? k)))
-                            (mapcat
-                              (fn [[k i]]
-                                [k
-                                 `(aset ~computed-arr-sym ~i ~'v)])))
-                        ~(if (empty? non-caseable-k->i)
-                           nil
-                           `(when-some [~'i (get ~'non-caseable-k->i ~'k)]
-                              (aset ~computed-arr-sym ~'i ~'v))))
-                      ~computed-arr-sym)
-
-                    ~@(->> non-dag-keys
-                        (map
-                          (fn [k]
-                            (let [i (k->i k)
-                                  k-sym (step-name-sym k)
-                                  res-fn-sym (resolve-fn-sym k)]
-                              `(~res-fn-sym [~computed-arr-sym]
-                                 (let [~'v (aget ~computed-arr-sym ~i)]
-                                   (if (identical? ~'v ~'MISSING)
-                                     (throw
-                                       (missing-step-or-input-ex ~k-sym))
-                                     ~'v)))))))
-
-                    ~@(->> graph
-                        (map
-                          (fn [[k step]]
-                            (let [i (k->i k)
-                                  k-sym (step-name-sym k)
-                                  res-fn-sym (resolve-fn-sym k)]
-                              `(~res-fn-sym [~computed-arr-sym]
-                                 (let [~'v (aget ~computed-arr-sym ~i)]
-                                   (if (identical? ~'v ~'MISSING)
-                                     (do
-                                       (aset ~computed-arr-sym ~i ~'EXPLORING)
-                                       (let [~@(->> step
-                                                 :mapdag.step/deps
-                                                 (mapcat
-                                                   (fn [dk]
-                                                     [(local-value-sym dk)
-                                                      `(~(resolve-fn-sym dk) ~computed-arr-sym)])))
-                                             ~'v1
-                                             ~(let [compute-expr
-                                                    `(~(compute-fn-sym k)
-                                                       ~@(->> step
-                                                           :mapdag.step/deps
-                                                           (map local-value-sym)))]
-                                                (if (:mapdag.step/wont-throw step) ;; INTRO set this to true to declare that the compute-fn can be expected to not throw any error, which allows for optimizations in execution.
-                                                  compute-expr
-                                                  `(try
-                                                    ~compute-expr
-                                                    (catch Throwable ~'err
-                                                      (throw
-                                                        (compute-fn-threw-ex ~'graph ~k-sym
-                                                          ~(->> step
-                                                             :mapdag.step/deps
-                                                             (mapv local-value-sym))
-                                                          ~'err))))))]
-                                         (aset ~computed-arr-sym ~i ~'v1)
-                                         ~'v1))
-                                     (if (identical? ~'v ~'EXPLORING)
-                                       (throw
-                                         (dep-cycle-ex ~k-sym))
-                                       ~'v))))))))]
-                   (let [~'k->resolve-fn
-                         ~(into {}
-                            (map (fn [[k _i]]
+                       ~'_EXPL-keys-locals
+                       (explained-code
+                         ["The following locals hold the values of the keys that name Steps or inputs"
+                          ("usually keywords, e.g:" :myapp.stats/xs, :myapp.stats/N, :myapp.stats/mean "etc.")
+                          "However, many other types are acceptable as keys, which is why we need these locals."])
+                       ~@(->> i->k
+                           (into []
+                             (comp
+                               (map-indexed
+                                 (fn [i k]
                                    [(step-name-sym k)
-                                    (resolve-fn-sym k)]))
-                            non-caseable-k->i)
+                                    `(nth ~'i->k ~i)]))
+                               cat)))
 
-                         ~'resolve-output-key
-                         (fn ~'resolve-output-key [~'inputs-map ~computed-arr-sym ~'k]
-                           (case ~'k
-                             ~@(->> i->k
-                                 (filter case-able-key?)
-                                 (mapcat
-                                   (fn [k]
-                                     (let [res-f-sym (resolve-fn-sym k)]
-                                       [k
-                                        `(~res-f-sym ~computed-arr-sym)]))))
-                             ~(let [find-in-inputs-expr
-                                    `(if-some [[~'_k ~'v] (find ~'inputs-map ~'k)]
-                                       ~'v
-                                       (throw
-                                         (missing-step-or-input-ex ~'k)))]
-                                (if (empty? non-caseable-k->i)
-                                  find-in-inputs-expr
-                                  `(if-some [~'res-f (get ~'k->resolve-fn ~'k)]
-                                    (~'res-f ~computed-arr-sym)
-                                    ~find-in-inputs-expr)))))]
-                     (fn ~'compiled-compute
-                       [~'inputs-map ~'output-keys]
-                       (let [;; IMPROVEMENT use topological sort to initialize an even shorter array (Val, 21 May 2020)
-                             ~computed-arr-sym (object-array ~N)
-                             ~'_ (System/arraycopy
-                                   ~'model-array 0
-                                   ~computed-arr-sym 0 ~N)
+                       ~'_EXPL-keys-locals
+                       (explained-code
+                         ["The following locals hold the step-computing functions"
+                          ("a.k.a" :mapdag.step/compute-fn)])
+                       ~@(->> graph
+                           keys
+                           (mapcat
+                             (fn [k]
+                               [(compute-fn-sym k)
+                                `(get-in ~'graph
+                                   [~(step-name-sym k)
+                                    :mapdag.step/compute-fn])])))]
+                   (explained-code
+                     ["The following functions perform the resolution of the computational Steps."
+                      "There is one per Step, computing its value by resolving dependencies,"
+                      "and using the cache array"
+                      ~computed-arr-sym
+                      "In particular, the call graph between these functions is static,"
+                      "yielding monomorphic call sites amenable to JIT optimization."]
+                     (letfn
+                       [~@(->> non-dag-keys
+                            (map
+                              (fn [k]
+                                (let [i (k->i k)
+                                      k-sym (step-name-sym k)
+                                      res-fn-sym (resolve-fn-sym k)]
+                                  `(~res-fn-sym [~computed-arr-sym]
+                                     (explained-code
+                                       ["This function resolves input key"
+                                        ~(if (case-able-key? k) k "<<NOT WRITEABLE>>")
+                                        "by looking it up in the cache array"
+                                        ~computed-arr-sym]
+                                       (let [~'v (aget ~computed-arr-sym ~i)]
+                                         (if (identical? ~'v ~'MISSING)
+                                           (throw
+                                             (missing-step-or-input-ex ~k-sym))
+                                           ~'v))))))))
 
-                             ~computed-arr-sym (reduce-kv ~'add-input ~computed-arr-sym ~'inputs-map)]
-                         (persistent!
-                           (reduce
-                             (fn [~'tret ~'ok]
-                               (assoc! ~'tret
-                                 ~'ok
-                                 (~'resolve-output-key ~'inputs-map ~computed-arr-sym ~'ok)))
-                             (transient {})
-                             ~'output-keys))))))))
+                        ~@(->> graph
+                            (map
+                              (fn [[k step]]
+                                (let [i (k->i k)
+                                      k-sym (step-name-sym k)
+                                      res-fn-sym (resolve-fn-sym k)]
+                                  `(~res-fn-sym [~computed-arr-sym]
+                                     (explained-code
+                                       ["This function resolves Step" ~(if (case-able-key? k) k "<<NOT WRITEABLE>>")]
+                                       (let [~'v (aget ~computed-arr-sym ~i)]
+                                         (if (identical? ~'v ~'MISSING)
+                                           (explained-code ["Cache miss"]
+                                             (do
+                                               (explained-code ["In anticipation of dependency cycles:"]
+                                                 (aset ~computed-arr-sym ~i ~'RESOLVING))
+                                               (let [~@(->> step
+                                                         :mapdag.step/deps
+                                                         (mapcat
+                                                           (fn [dk]
+                                                             [(local-value-sym dk)
+                                                              `(~(resolve-fn-sym dk) ~computed-arr-sym)])))
+                                                     ~'v1
+                                                     (explained-code
+                                                       ["Having resolved the dependencies of this Step in the above locals,"
+                                                        "We're now computing the Step value by calling the"
+                                                        :mapdag.step/compute-fn]
+                                                       ~(let [compute-expr
+                                                              `(~(compute-fn-sym k)
+                                                                 ~@(->> step
+                                                                     :mapdag.step/deps
+                                                                     (map local-value-sym)))]
+                                                          (if (:mapdag.step/wont-throw step) ;; INTRO set this to true to declare that the compute-fn can be expected to not throw any error, which allows for optimizations in execution.
+                                                            `(explained-code
+                                                               ["No error catching is done here, as this Step is annotated with a truthy"
+                                                                :mapdag.step/wont-throw]
+                                                               ~compute-expr)
+                                                            `(try
+                                                               ~compute-expr
+                                                               (catch Throwable ~'err
+                                                                 (throw
+                                                                   (compute-fn-threw-ex ~'graph ~k-sym
+                                                                     ~(->> step
+                                                                        :mapdag.step/deps
+                                                                        (mapv local-value-sym))
+                                                                     ~'err)))))))]
+                                                 (explained-code ["Cache put"]
+                                                   (aset ~computed-arr-sym ~i ~'v1))
+                                                 ~'v1)))
+                                           (if (identical? ~'v ~'RESOLVING)
+                                             (explained-code ["Dependency cycle detected."]
+                                               (throw
+                                                 (dep-cycle-ex ~k-sym)))
+                                             (explained-code ["Cache hit"]
+                                               ~'v))))))))))]
+                       (let [~'add-input
+                             (explained-code
+                               ["This function reads an inputs-map entry, adding its value to the"
+                                ~'computed-arr
+                                "cache array if required."]
+                               (fn ~'add-input [~computed-arr-sym ~'k ~'v]
+                                 (explained-code
+                                   ["Static dispatch on input keys, hopefully makes things faster."]
+                                   (case ~'k
+                                     ~@(->> k->i
+                                         (filter
+                                           (fn [[k _i]]
+                                             (case-able-key? k)))
+                                         (mapcat
+                                           (fn [[k i]]
+                                             [k
+                                              `(aset ~computed-arr-sym ~i ~'v)])))
+                                     ~(if (empty? non-caseable-k->i)
+                                        nil
+                                        `(explained-code
+                                           ["Handling input keys unsuitable for a (case ...) clause (very untypical)."]
+                                           (when-some [~'i (get ~'non-caseable-k->i ~'k)]
+                                             (aset ~computed-arr-sym ~'i ~'v))))))
+                                 ~computed-arr-sym))
+
+                             ~'k->resolve-fn
+                             ~(into {}
+                                (map (fn [[k _i]]
+                                       [(step-name-sym k)
+                                        (resolve-fn-sym k)]))
+                                non-caseable-k->i)
+
+                             ~'resolve-output-key
+                             (explained-code
+                               ["This function dynamically resolves a requested output key by dispatching to the"
+                                ~'resolve-x--MY-KEY
+                                "functions."]
+                               (fn ~'resolve-output-key [~'inputs-map ~computed-arr-sym ~'output-k]
+                                 (case ~'output-k
+                                   ~@(->> i->k
+                                       (filter case-able-key?)
+                                       (mapcat
+                                         (fn [k]
+                                           (let [res-f-sym (resolve-fn-sym k)]
+                                             [k
+                                              `(~res-f-sym ~computed-arr-sym)]))))
+                                   ~(let [find-in-inputs-expr
+                                          `(explained-code
+                                             ["The requested output-key is not declared in the graph,"
+                                              "looking it up in the inputs map."]
+                                             (if-some [[~'_k ~'v] (find ~'inputs-map ~'output-k)]
+                                                ~'v
+                                                (throw
+                                                    (missing-step-or-input-ex ~'output-k))))]
+                                      (if (empty? non-caseable-k->i)
+                                        find-in-inputs-expr
+                                        `(if-some [~'res-f (get ~'k->resolve-fn ~'output-k)]
+                                           (explained-code
+                                             ["The requested output-key is one of those that can't be matched in a `case` clause,"
+                                              "so we fall back to a dynamic map-based lookup."]
+                                             (~'res-f ~computed-arr-sym))
+                                           ~find-in-inputs-expr))))))]
+                         (explained-code
+                           ["This function is the actual output of the graph compilation."
+                            "It closes over the above-defined helper and constants."]
+                           (fn ~'compiled-compute
+                             [~'inputs-map ~'output-keys]
+                             (let [;; IMPROVEMENT use topological sort to initialize an even shorter array (Val, 21 May 2020)
+                                   ~computed-arr-sym (object-array ~N)
+                                   ~'_ (explained-code
+                                         ["Initializing a cache array filled with" ~'MISSING]
+                                         (System/arraycopy
+                                            ~'model-array 0
+                                            ~computed-arr-sym 0 ~N))
+
+                                   ~computed-arr-sym
+                                   (explained-code
+                                     ["Scanning the inputs map, filling the cache array"
+                                      "with those values that will be used in downstream Step computations."
+                                      "In particular, it's preferable for performance to have a small inputs-map."]
+                                     ;; IMPROVEMENT make it possible to avoid this linear cost. (Val, 23 May 2020)
+                                     ;; One issue to consider is that any graph key is a potential input.
+                                     (reduce-kv ~'add-input ~computed-arr-sym ~'inputs-map))]
+                               (persistent!
+                                 (reduce
+                                   (fn [~'t-ret ~'output-k]
+                                     (assoc! ~'t-ret
+                                       ~'output-k
+                                       (~'resolve-output-key ~'inputs-map ~computed-arr-sym ~'output-k)))
+                                   (transient {})
+                                   ~'output-keys)))))))))))
             factory
-            (binding [] #_ [*warn-on-reflection* true]
+            (binding
+              [];[*warn-on-reflection* true]
               (-> factory-code
-                #_
-                (doto clojure.pprint/pprint)
+                ;; Uncomment to print the generated code.
+                ;(doto (mapdag.dev/pprint-generated-code))
                 eval))]
         (factory graph k->i i->k non-caseable-k->i)))))
+
 
 (comment
 
@@ -247,6 +338,8 @@
       (assoc-in [:N :mapdag.step/wont-throw] true)))
 
   (def compute (compile-default graph))
+
+  *e
 
   (compute
     {:xs [1. 2. 3.]}

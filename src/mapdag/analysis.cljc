@@ -127,13 +127,9 @@
   The other arguments can be used to limit what the validation will cover:
 
   - if `input-keys-or-false` is a sequence of input names, will check if some inputs or steps are missing.
-  Otherwise it argument should be set to the boolean `false` (not `nil`, which would be interpreted as an empty sequence.).
+  Otherwise this argument should be set to the boolean `false` (not `nil`, which would be interpreted as an empty sequence.).
   - if `output-keys-or-false` is a sequence of step names, will only check for dependency cycles or missing steps on the sub-graph induced by the ancestors of these steps.
-  Otherwise it argument should be set to the boolean `false` (not `nil`, which would be interpreted as an empty sequence.).
-
-  When not-false, these arguments lead to tolerating pathological properties that don't get in the way of the computation at hands:
-  - dependency cycles that are outside of the necessary steps, or broken by the inputs, will not be reported.
-  - missing steps outside of the necessary steps won't be reported."
+  Otherwise this argument should be set to the boolean `false` (not `nil`, which would be interpreted as an empty sequence.)."
   [graph input-keys-or-false output-keys-or-false]
   (validate-shape graph)
   (validate-dependency-links graph input-keys-or-false output-keys-or-false)

@@ -7,6 +7,8 @@
    :extra-deps
    {vvvvalvalval/scope-capture {:mvn/version "0.3.2"}
 
+    fipp {:mvn/version "0.6.22"}
+    cljfmt {:mvn/version "0.6.4"}
     com.clojure-goes-fast/clj-async-profiler {:mvn/version "0.3.1"}
     criterium {:mvn/version "0.4.5"}}}
   :test

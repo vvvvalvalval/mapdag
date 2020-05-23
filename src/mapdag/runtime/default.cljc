@@ -16,7 +16,9 @@
   returns a map from the output keys to their computed values.
 
   Only the necessary intermediary computations will be performed.
-  Missing inputs and dependency cycles will be tolerated, but only if they can't be reached from given output keys."
+
+  In the current implementation, dependency cycles will be tolerated if they can't be reached from the outputs or
+  are broken by the inputs. However, this behaviour is an implementation detail that should not be relied upon."
   [graph inputs-map output-keys]
   (mapdag.analysis/validate-graph graph
     (keys inputs-map)
@@ -34,7 +36,6 @@
                           (get graph step-name)]
                   (let [acc1 (reduce ensure-key acc deps-names)
                         deps-values (mapv acc1 deps-names)
-                        ;; FIXME error management
                         v (try
                             (apply compute-fn deps-values)
                             (catch Throwable err
