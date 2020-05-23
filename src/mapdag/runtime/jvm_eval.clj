@@ -7,8 +7,8 @@
   2. Map-based navigation. This implementation generates code that navigates the graph through primitive array lookups.
   3. Megamorphic JVM call sites (when calling the `:mapdag.step/compute-fn`), impeding JIT optimization. This function eschews this by generating code which defines one function per step, and does static dispatch on the keys (using `clojure.core/case`).
   "
-  (:require [mapdag.analysis]
-            [cljfmt.core :as cljfmt]))
+  (:require [mapdag.analysis])
+  (:import (java.util.function Supplier)))
 
 (defmacro explained-code
   "A noop macro for emitting self-commenting code.
@@ -116,13 +116,28 @@
                        ~'RESOLVING (explained-code
                                      ["A flag object used for detecting dependency cycles."]
                                      (Object.))
-                       ~'model-array
-                       (explained-code
-                         ["This array is a ready-to-be-cloned 'prototype' for the cache array"
-                          ~'computed-arr
-                          "which is why it's filled with"
-                          ~'MISSING]
-                         (object-array (repeat ~N ~'MISSING)))
+                       ~'init-cache-array
+                       (let [~'model-array (object-array (repeat ~N ~'MISSING))
+                             ~'tl
+                             ;; WARNING this method requires Java 8 or higher. (Val, 23 May 2020)
+                             ;; I'm using it instead of using clojure's (proxy) because the latter adds much more overhead.
+                             (ThreadLocal/withInitial
+                               (reify Supplier
+                                 (get [~'this] (object-array ~N))))]
+                         (explained-code
+                           ["This function returns an array ready to be used as a cache for Step resolution."
+                            "This array is reused by storing it in a ThreadLocal:"
+                            "hopefully this reduces memory pressure."]
+                           (fn ~'init-cache-array
+                             ~(vary-meta [] merge {:tag 'objects})
+                             (let [~'computed-arr (.get ~'tl)]
+                               (explained-code
+                                 ["Quickly filling the cache array with" ~'MISSING]
+                                 (System/arraycopy
+                                   ~'model-array 0
+                                   ~computed-arr-sym 0 ~N))
+                               ~'computed-arr))))
+
 
                        ~'_EXPL-keys-locals
                        (explained-code
@@ -298,13 +313,7 @@
                            (fn ~'compiled-compute
                              [~'inputs-map ~'output-keys]
                              (let [;; IMPROVEMENT use topological sort to initialize an even shorter array (Val, 21 May 2020)
-                                   ~computed-arr-sym (object-array ~N)
-                                   ~'_ (explained-code
-                                         ["Initializing a cache array filled with" ~'MISSING]
-                                         (System/arraycopy
-                                            ~'model-array 0
-                                            ~computed-arr-sym 0 ~N))
-
+                                   ~computed-arr-sym (~'init-cache-array)
                                    ~computed-arr-sym
                                    (explained-code
                                      ["Scanning the inputs map, filling the cache array"
@@ -586,12 +595,9 @@
 
 
 (comment
+  (require 'mapdag.test.core)
 
   (def graph mapdag.test.core/stats-dag)
-
-
-  (require 'mapdag.runtime.default)
-  (require '[criterium.core :as bench])
 
   (def inputs-map
     {:xs [1. 2. 3.] :ys "something-else"})
@@ -599,51 +605,46 @@
   (def output-keys
     [:variance :mean :xs])
 
+
+  (require 'mapdag.runtime.default)
+  (require '[criterium.core :as bench])
+
   (bench/quick-bench
     (mapdag.runtime.default/compute graph inputs-map output-keys))
-  ;Evaluation count : 20220 in 6 samples of 3370 calls.
-  ;             Execution time mean : 25.268332 µs
-  ;    Execution time std-deviation : 6.794613 µs
-  ;   Execution time lower quantile : 17.504584 µs ( 2.5%)
-  ;   Execution time upper quantile : 34.092603 µs (97.5%)
-  ;                   Overhead used : 2.834925 ns
+  ;Evaluation count : 49920 in 6 samples of 8320 calls.
+  ;             Execution time mean : 15.030164 µs
+  ;    Execution time std-deviation : 827.185440 ns
+  ;   Execution time lower quantile : 13.920649 µs ( 2.5%)
+  ;   Execution time upper quantile : 15.877785 µs (97.5%)
+  ;                   Overhead used : 2.067515 ns
 
 
   (let [compute (compile-graph
                   {}
                   graph)]
-    (bench/bench
+    (bench/quick-bench
       (compute inputs-map output-keys))
     compute)
-  ;Evaluation count : 30349020 in 60 samples of 505817 calls.
-  ;             Execution time mean : 1.989625 µs
-  ;    Execution time std-deviation : 115.053590 ns
-  ;   Execution time lower quantile : 1.791156 µs ( 2.5%)
-  ;   Execution time upper quantile : 2.250594 µs (97.5%)
-  ;                   Overhead used : 2.834925 ns
-  ;
-  ;Found 4 outliers in 60 samples (6.6667 %)
-  ;	low-severe	 1 (1.6667 %)
-  ;	low-mild	 3 (5.0000 %)
-  ; Variance from outliers : 43.4230 % Variance is moderately inflated by outliers                 Overhead used : 2.834925 ns
+  ;Evaluation count : 400440 in 6 samples of 66740 calls.
+  ;             Execution time mean : 1.729343 µs
+  ;    Execution time std-deviation : 320.491559 ns
+  ;   Execution time lower quantile : 1.301319 µs ( 2.5%)
+  ;   Execution time upper quantile : 2.076579 µs (97.5%)
+  ;                   Overhead used : 2.067515 ns
 
 
   (let [compute (compile-graph
                   {:mapdag.run/input-keys [:xs]
                    :mapdag.run/output-keys output-keys}
                   graph)]
-    (bench/bench
+    (bench/quick-bench
       (compute inputs-map)))
-  ;Evaluation count : 50960100 in 60 samples of 849335 calls.
-  ;             Execution time mean : 1.238251 µs
-  ;    Execution time std-deviation : 56.319528 ns
-  ;   Execution time lower quantile : 1.144463 µs ( 2.5%)
-  ;   Execution time upper quantile : 1.348403 µs (97.5%)
-  ;                   Overhead used : 2.834925 ns
-  ;
-  ;Found 1 outliers in 60 samples (1.6667 %)
-  ;	low-severe	 1 (1.6667 %)
-  ; Variance from outliers : 31.9346 % Variance is moderately inflated by outliers                 Overhead used : 2.834925 ns
+  ;Evaluation count : 594036 in 6 samples of 99006 calls.
+  ;             Execution time mean : 1.091168 µs
+  ;    Execution time std-deviation : 215.421686 ns
+  ;   Execution time lower quantile : 894.605418 ns ( 2.5%)
+  ;   Execution time upper quantile : 1.391197 µs (97.5%)
+  ;                   Overhead used : 2.067515 ns
 
 
 
@@ -655,7 +656,7 @@
       graph))
 
   (prof/profile
-    (dotimes [_ 10000]
+    (dotimes [_ 1000000]
       (c-default inputs-map output-keys)))
 
   (prof/serve-files 7000)
