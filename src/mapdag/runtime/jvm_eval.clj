@@ -335,18 +335,455 @@
               [];[*warn-on-reflection* true]
               (-> factory-code
                 ;; Uncomment to print the generated code.
-                ;(doto (mapdag.dev/pprint-generated-code))
+                (doto (mapdag.dev/pprint-generated-code))
                 eval))]
         (factory graph k->i i->k non-caseable-k->i)))))
 
 
 (comment
 
+  (require 'mapdag.test.core)
+
   (def graph
     (-> mapdag.test.core/stats-dag
       (assoc-in [:N :mapdag.step/wont-throw] true)))
 
   (def compute (compile-default graph))
+
+  (explained-code
+    ["This generated function gets injected some runtime data (notably the "
+     :mapdag.step/compute-fn
+     "functions), and returns the actual output of the compilation process: a function accepting"
+     [inputs-map output-keys]
+     "arguments and returning a map."]
+    (fn factory [graph k->i i->k non-caseable-k->i]
+      (let [MISSING (explained-code
+                      ["A flag object indicating a missing value."
+                       "Note that `nil` cannot be used for this purpose,"
+                       "as it is a valid value for Steps or inputs."]
+                      (Object.))
+            RESOLVING (explained-code
+                        ["A flag object used for detecting dependency cycles."]
+                        (Object.))
+            init-cache-array (let [model-array (object-array
+                                                 (repeat 8 MISSING))
+                                   tl (java.lang.ThreadLocal/withInitial
+                                        (reify
+                                          java.util.function.Supplier
+                                          (get [this] (object-array 8))))]
+                               (explained-code
+                                 ["This function returns an array ready to be used as a cache for Step resolution."
+                                  "This array is reused by storing it in a ThreadLocal:"
+                                  "hopefully this reduces memory pressure."]
+                                 (fn init-cache-array []
+                                   (let [computed-arr (.get tl)]
+                                     (explained-code
+                                       ["Quickly filling the cache array with"
+                                        MISSING]
+                                       (java.lang.System/arraycopy
+                                         model-array
+                                         0
+                                         computed-arr
+                                         0
+                                         8))
+                                     computed-arr))))
+            _EXPL-keys-locals (explained-code
+                                ["The following locals hold the values of the keys that name Steps or inputs"
+                                 ("usually keywords, e.g:"
+                                   :myapp.stats/xs
+                                   :myapp.stats/N
+                                   :myapp.stats/mean
+                                   "etc.")
+                                 "However, many other types are acceptable as keys, which is why we need these locals."])
+            k-0--squares (nth i->k 0)
+            k-1--mean (nth i->k 1)
+            k-2--stddev (nth i->k 2)
+            k-3--variance (nth i->k 3)
+            k-4--xs (nth i->k 4)
+            k-5--sum-squares (nth i->k 5)
+            k-6--N (nth i->k 6)
+            k-7--sum (nth i->k 7)
+            _EXPL-keys-locals (explained-code
+                                ["The following locals hold the step-computing functions"
+                                 ("a.k.a" :mapdag.step/compute-fn)])
+            compute-fn-6--N (get-in
+                              graph
+                              [k-6--N :mapdag.step/compute-fn])
+            compute-fn-7--sum (get-in
+                                graph
+                                [k-7--sum :mapdag.step/compute-fn])
+            compute-fn-1--mean (get-in
+                                 graph
+                                 [k-1--mean :mapdag.step/compute-fn])
+            compute-fn-0--squares (get-in
+                                    graph
+                                    [k-0--squares :mapdag.step/compute-fn])
+            compute-fn-5--sum-squares (get-in
+                                        graph
+                                        [k-5--sum-squares
+                                         :mapdag.step/compute-fn])
+            compute-fn-3--variance (get-in
+                                     graph
+                                     [k-3--variance
+                                      :mapdag.step/compute-fn])
+            compute-fn-2--stddev (get-in
+                                   graph
+                                   [k-2--stddev :mapdag.step/compute-fn])]
+        (explained-code
+          ["The following functions perform the resolution of the computational Steps."
+           "There is one per Step, computing its value by resolving dependencies,"
+           "and using the cache array"
+           computed-arr
+           "In particular, the call graph between these functions is static,"
+           "yielding monomorphic call sites amenable to JIT optimization."]
+          (letfn
+            [(resolve-4--xs
+               [computed-arr]
+               (explained-code
+                 ["This function resolves input key"
+                  :xs
+                  "by looking it up in the cache array"
+                  computed-arr]
+                 (let [v (aget computed-arr 4)]
+                   (if (identical? v MISSING)
+                     (throw (missing-step-or-input-ex k-4--xs))
+                     v))))
+             (resolve-6--N
+               [computed-arr]
+               (explained-code
+                 ["This function resolves Step" :N]
+                 (let [v (aget computed-arr 6)]
+                   (if (identical? v MISSING)
+                     (explained-code
+                       ["Cache miss"]
+                       (do
+                         (explained-code
+                           ["In anticipation of dependency cycles:"]
+                           (aset computed-arr 6 RESOLVING))
+                         (let [l-4--xs (resolve-4--xs computed-arr)
+                               v1 (explained-code
+                                    ["Having resolved the dependencies of this Step in the above locals,"
+                                     "We're now computing the Step value by calling the"
+                                     :mapdag.step/compute-fn]
+                                    (explained-code
+                                      ["No error catching is done here, as this Step is annotated with a truthy"
+                                       :mapdag.step/wont-throw]
+                                      (compute-fn-6--N l-4--xs)))]
+                           (explained-code
+                             ["Cache put"]
+                             (aset computed-arr 6 v1))
+                           v1)))
+                     (if (identical? v RESOLVING)
+                       (explained-code
+                         ["Dependency cycle detected."]
+                         (throw (dep-cycle-ex k-6--N)))
+                       (explained-code ["Cache hit"] v))))))
+             (resolve-7--sum
+               [computed-arr]
+               (explained-code
+                 ["This function resolves Step" :sum]
+                 (let [v (aget computed-arr 7)]
+                   (if (identical? v MISSING)
+                     (explained-code
+                       ["Cache miss"]
+                       (do
+                         (explained-code
+                           ["In anticipation of dependency cycles:"]
+                           (aset computed-arr 7 RESOLVING))
+                         (let [l-4--xs (resolve-4--xs computed-arr)
+                               v1 (explained-code
+                                    ["Having resolved the dependencies of this Step in the above locals,"
+                                     "We're now computing the Step value by calling the"
+                                     :mapdag.step/compute-fn]
+                                    (try
+                                      (compute-fn-7--sum l-4--xs)
+                                      (catch
+                                        Throwable
+                                        err
+                                        (throw
+                                          (compute-fn-threw-ex
+                                            graph
+                                            k-7--sum
+                                            [l-4--xs]
+                                            err)))))]
+                           (explained-code
+                             ["Cache put"]
+                             (aset computed-arr 7 v1))
+                           v1)))
+                     (if (identical? v RESOLVING)
+                       (explained-code
+                         ["Dependency cycle detected."]
+                         (throw (dep-cycle-ex k-7--sum)))
+                       (explained-code ["Cache hit"] v))))))
+             (resolve-1--mean
+               [computed-arr]
+               (explained-code
+                 ["This function resolves Step" :mean]
+                 (let [v (aget computed-arr 1)]
+                   (if (identical? v MISSING)
+                     (explained-code
+                       ["Cache miss"]
+                       (do
+                         (explained-code
+                           ["In anticipation of dependency cycles:"]
+                           (aset computed-arr 1 RESOLVING))
+                         (let [l-7--sum (resolve-7--sum computed-arr)
+                               l-6--N (resolve-6--N computed-arr)
+                               v1 (explained-code
+                                    ["Having resolved the dependencies of this Step in the above locals,"
+                                     "We're now computing the Step value by calling the"
+                                     :mapdag.step/compute-fn]
+                                    (try
+                                      (compute-fn-1--mean l-7--sum l-6--N)
+                                      (catch
+                                        Throwable
+                                        err
+                                        (throw
+                                          (compute-fn-threw-ex
+                                            graph
+                                            k-1--mean
+                                            [l-7--sum l-6--N]
+                                            err)))))]
+                           (explained-code
+                             ["Cache put"]
+                             (aset computed-arr 1 v1))
+                           v1)))
+                     (if (identical? v RESOLVING)
+                       (explained-code
+                         ["Dependency cycle detected."]
+                         (throw (dep-cycle-ex k-1--mean)))
+                       (explained-code ["Cache hit"] v))))))
+             (resolve-0--squares
+               [computed-arr]
+               (explained-code
+                 ["This function resolves Step" :squares]
+                 (let [v (aget computed-arr 0)]
+                   (if (identical? v MISSING)
+                     (explained-code
+                       ["Cache miss"]
+                       (do
+                         (explained-code
+                           ["In anticipation of dependency cycles:"]
+                           (aset computed-arr 0 RESOLVING))
+                         (let [l-4--xs (resolve-4--xs computed-arr)
+                               v1 (explained-code
+                                    ["Having resolved the dependencies of this Step in the above locals,"
+                                     "We're now computing the Step value by calling the"
+                                     :mapdag.step/compute-fn]
+                                    (try
+                                      (compute-fn-0--squares l-4--xs)
+                                      (catch
+                                        Throwable
+                                        err
+                                        (throw
+                                          (compute-fn-threw-ex
+                                            graph
+                                            k-0--squares
+                                            [l-4--xs]
+                                            err)))))]
+                           (explained-code
+                             ["Cache put"]
+                             (aset computed-arr 0 v1))
+                           v1)))
+                     (if (identical? v RESOLVING)
+                       (explained-code
+                         ["Dependency cycle detected."]
+                         (throw (dep-cycle-ex k-0--squares)))
+                       (explained-code ["Cache hit"] v))))))
+             (resolve-5--sum-squares
+               [computed-arr]
+               (explained-code
+                 ["This function resolves Step" :sum-squares]
+                 (let [v (aget computed-arr 5)]
+                   (if (identical? v MISSING)
+                     (explained-code
+                       ["Cache miss"]
+                       (do
+                         (explained-code
+                           ["In anticipation of dependency cycles:"]
+                           (aset computed-arr 5 RESOLVING))
+                         (let [l-0--squares (resolve-0--squares computed-arr)
+                               v1 (explained-code
+                                    ["Having resolved the dependencies of this Step in the above locals,"
+                                     "We're now computing the Step value by calling the"
+                                     :mapdag.step/compute-fn]
+                                    (try
+                                      (compute-fn-5--sum-squares l-0--squares)
+                                      (catch
+                                        Throwable
+                                        err
+                                        (throw
+                                          (compute-fn-threw-ex
+                                            graph
+                                            k-5--sum-squares
+                                            [l-0--squares]
+                                            err)))))]
+                           (explained-code
+                             ["Cache put"]
+                             (aset computed-arr 5 v1))
+                           v1)))
+                     (if (identical? v RESOLVING)
+                       (explained-code
+                         ["Dependency cycle detected."]
+                         (throw (dep-cycle-ex k-5--sum-squares)))
+                       (explained-code ["Cache hit"] v))))))
+             (resolve-3--variance
+               [computed-arr]
+               (explained-code
+                 ["This function resolves Step" :variance]
+                 (let [v (aget computed-arr 3)]
+                   (if (identical? v MISSING)
+                     (explained-code
+                       ["Cache miss"]
+                       (do
+                         (explained-code
+                           ["In anticipation of dependency cycles:"]
+                           (aset computed-arr 3 RESOLVING))
+                         (let [l-1--mean (resolve-1--mean computed-arr)
+                               l-5--sum-squares (resolve-5--sum-squares
+                                                  computed-arr)
+                               l-6--N (resolve-6--N computed-arr)
+                               v1 (explained-code
+                                    ["Having resolved the dependencies of this Step in the above locals,"
+                                     "We're now computing the Step value by calling the"
+                                     :mapdag.step/compute-fn]
+                                    (try
+                                      (compute-fn-3--variance
+                                        l-1--mean
+                                        l-5--sum-squares
+                                        l-6--N)
+                                      (catch
+                                        Throwable
+                                        err
+                                        (throw
+                                          (compute-fn-threw-ex
+                                            graph
+                                            k-3--variance
+                                            [l-1--mean l-5--sum-squares l-6--N]
+                                            err)))))]
+                           (explained-code
+                             ["Cache put"]
+                             (aset computed-arr 3 v1))
+                           v1)))
+                     (if (identical? v RESOLVING)
+                       (explained-code
+                         ["Dependency cycle detected."]
+                         (throw (dep-cycle-ex k-3--variance)))
+                       (explained-code ["Cache hit"] v))))))
+             (resolve-2--stddev
+               [computed-arr]
+               (explained-code
+                 ["This function resolves Step" :stddev]
+                 (let [v (aget computed-arr 2)]
+                   (if (identical? v MISSING)
+                     (explained-code
+                       ["Cache miss"]
+                       (do
+                         (explained-code
+                           ["In anticipation of dependency cycles:"]
+                           (aset computed-arr 2 RESOLVING))
+                         (let [l-3--variance (resolve-3--variance computed-arr)
+                               v1 (explained-code
+                                    ["Having resolved the dependencies of this Step in the above locals,"
+                                     "We're now computing the Step value by calling the"
+                                     :mapdag.step/compute-fn]
+                                    (try
+                                      (compute-fn-2--stddev l-3--variance)
+                                      (catch
+                                        Throwable
+                                        err
+                                        (throw
+                                          (compute-fn-threw-ex
+                                            graph
+                                            k-2--stddev
+                                            [l-3--variance]
+                                            err)))))]
+                           (explained-code
+                             ["Cache put"]
+                             (aset computed-arr 2 v1))
+                           v1)))
+                     (if (identical? v RESOLVING)
+                       (explained-code
+                         ["Dependency cycle detected."]
+                         (throw (dep-cycle-ex k-2--stddev)))
+                       (explained-code ["Cache hit"] v))))))]
+            (let [add-input (explained-code
+                              ["This function reads an inputs-map entry, adding its value to the"
+                               computed-arr
+                               "cache array if required."]
+                              (fn add-input [computed-arr k v]
+                                (explained-code
+                                  ["Static dispatch on input keys, hopefully makes things faster."]
+                                  (case k
+                                    :squares (aset computed-arr 0 v)
+                                    :mean (aset computed-arr 1 v)
+                                    :stddev (aset computed-arr 2 v)
+                                    :variance (aset computed-arr 3 v)
+                                    :xs (aset computed-arr 4 v)
+                                    :sum-squares (aset computed-arr 5 v)
+                                    :N (aset computed-arr 6 v)
+                                    :sum (aset computed-arr 7 v)))
+                                computed-arr))
+                  k->resolve-fn {}
+                  resolve-output-key (explained-code
+                                       ["This function dynamically resolves a requested output key by dispatching to the"
+                                        resolve-x--MY-KEY
+                                        "functions."]
+                                       (fn resolve-output-key [inputs-map
+                                                               computed-arr
+                                                               output-k]
+                                         (case output-k
+                                           :squares
+                                           (resolve-0--squares computed-arr)
+                                           :mean
+                                           (resolve-1--mean computed-arr)
+                                           :stddev
+                                           (resolve-2--stddev computed-arr)
+                                           :variance
+                                           (resolve-3--variance
+                                             computed-arr)
+                                           :xs (resolve-4--xs computed-arr)
+                                           :sum-squares
+                                           (resolve-5--sum-squares
+                                             computed-arr)
+                                           :N (resolve-6--N computed-arr)
+                                           :sum
+                                           (resolve-7--sum computed-arr)
+                                           (explained-code
+                                             ["The requested output-key is not declared in the graph,"
+                                              "looking it up in the inputs map."]
+                                             (if-some [[_k v] (find
+                                                                inputs-map
+                                                                output-k)]
+                                               v
+                                               (throw
+                                                 (missing-step-or-input-ex
+                                                   output-k)))))))]
+              (explained-code
+                ["This function is the actual output of the graph compilation."
+                 "It closes over the above-defined helper and constants."]
+                (fn compiled-compute [inputs-map output-keys]
+                  (let [computed-arr (init-cache-array)
+                        computed-arr (explained-code
+                                       ["Scanning the inputs map, filling the cache array"
+                                        "with those values that will be used in downstream Step computations."
+                                        "In particular, it's preferable for performance to have a small inputs-map."]
+                                       (reduce-kv
+                                         add-input
+                                         computed-arr
+                                         inputs-map))]
+                    (persistent!
+                      (reduce
+                        (fn [t-ret output-k]
+                          (assoc!
+                            t-ret
+                            output-k
+                            (resolve-output-key
+                              inputs-map
+                              computed-arr
+                              output-k)))
+                        (transient {})
+                        output-keys)))))))))))
 
   *e
 
