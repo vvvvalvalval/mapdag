@@ -340,6 +340,19 @@
         (factory graph k->i i->k non-caseable-k->i)))))
 
 
+(defn compile-with-known-outputs
+  [graph output-keys]
+  ;; IMPROVEMENT code generation for statically leveraging the fact that the outputs are known. (Val, 25 May 2020)
+  ;; Some ideas of enhancements:
+  ;; 1. Call the resolve- fns statically rather than doing a key-based dispatch
+  ;; 2. Smaller cache array. This really seems like yak-shaving at this point, as this array is cached anyway.
+  (let [f (compile-default graph)
+        output-keys (vec output-keys)]
+    (mapdag.analysis/validate-dependency-links graph false output-keys)
+    (fn compute-from-output-keys [inputs-map]
+      (f inputs-map output-keys))))
+
+
 (comment
 
   (def graph
@@ -584,7 +597,8 @@
       (and known-input-keys? known-output-keys?)
       (compile-with-known-input-and-outputs graph input-keys output-keys)
 
-      ;; TODO known-outputs (Val, 21 May 2020)
+      known-output-keys?
+      (compile-with-known-outputs graph output-keys)
 
       ;; IMPROVEMENT known-inputs (Val, 21 May 2020)
 
@@ -634,6 +648,19 @@
 
 
   (let [compute (compile-graph
+                  {:mapdag.run/output-keys output-keys}
+                  graph)]
+    (bench/quick-bench
+      (compute inputs-map))
+    compute)
+  ;Evaluation count : 487272 in 6 samples of 81212 calls.
+  ;             Execution time mean : 1.386227 µs
+  ;    Execution time std-deviation : 126.419831 ns
+  ;   Execution time lower quantile : 1.271053 µs ( 2.5%)
+  ;   Execution time upper quantile : 1.568234 µs (97.5%)
+  ;                   Overhead used : 2.157406 ns
+
+  (let [compute (compile-graph
                   {:mapdag.run/input-keys [:xs]
                    :mapdag.run/output-keys output-keys}
                   graph)]
@@ -660,5 +687,28 @@
       (c-default inputs-map output-keys)))
 
   (prof/serve-files 7000)
+
+  *e)
+
+
+(comment
+
+  (require 'mapdag.test.core)
+
+  (def graph mapdag.test.core/stats-dag)
+
+  (def inputs-map
+    {:xs [1. 2. 3.] :ys "something-else"})
+
+  (def output-keys
+    [:variance :mean :xs])
+
+  (def c-ok (compile-graph
+              {:mapdag.run/output-keys output-keys}
+              graph))
+
+  (c-ok inputs-map)
+  ;=> {:variance 0.666666666666667, :mean 2.0, :xs [1.0 2.0 3.0]}
+
 
   *e)

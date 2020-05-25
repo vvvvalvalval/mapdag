@@ -12,6 +12,13 @@
                       graph)]
         (compute inputs-map output-keys)))))
 
+(deftest compute-with-known-ouput--examples
+  (mapdag.test.core/test-implementation--examples
+    (fn [graph inputs-map output-keys]
+      (let [compute (mapdag.runtime.jvm-eval/compile-graph
+                      {:mapdag.run/output-keys output-keys}
+                      graph)]
+        (compute inputs-map)))))
 
 (deftest compute-with-known-input-and-ouput--examples
   (mapdag.test.core/test-implementation--examples
