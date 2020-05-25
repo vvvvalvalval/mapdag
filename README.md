@@ -18,7 +18,7 @@ This library is available for download from [Clojars](https://clojars.org/vvvval
 To add it as a dependency to your project, add this to your `deps.edn`:
 
 ```
-  vvvvalvalval/mapdag {:mvn/version "0.2.0"}
+  vvvvalvalval/mapdag {:mvn/version "0.2.1"}
 ```
 
 
