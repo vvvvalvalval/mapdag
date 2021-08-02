@@ -77,7 +77,7 @@
                   [:variance])
               (try
                 nil
-                (catch Throwable err
+                (catch #?(:clj Throwable :cljs :default) err
                   err))
               (as-> err
                 (do

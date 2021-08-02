@@ -17,5 +17,5 @@
   `(try
      ~expr
      nil
-     (catch Throwable err#
+     (catch #?(:clj Throwable :cljs :default) err#
        (error-api-data err#))))

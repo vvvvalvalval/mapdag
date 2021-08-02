@@ -38,7 +38,7 @@
                         deps-values (mapv acc1 deps-names)
                         v (try
                             (apply compute-fn deps-values)
-                            (catch Throwable err
+                            (catch #?(:clj Throwable :cljs :default) err
                               (throw
                                 (ex-info
                                   (str "Error computing step " (pr-str step-name) ": " (pr-str :mapdag.step/compute-fn) " threw.")
